@@ -1,0 +1,537 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "_artifactsLocation": {
+      "type": "string",
+      "metadata": {
+        "description": "Auto-generated container in staging storage account to receive post-build staging folder upload"
+      },
+      "defaultValue":"https://raw.githubusercontent.com/paulomarquesc/bindsetup/master"
+    },
+    "_artifactsLocationSasToken": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Auto-generated token to access _artifactsLocation"
+      },
+      "defaultValue":""
+    },
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Location where the resources of this template will be deployed to"
+      },
+      "defaultValue": "westus"
+    },
+    "deploymentUniqueString": {
+      "type": "string",
+      "metadata": {
+        "description": "String that uniquely identifies deployments"
+      },
+      "defaultValue": "none"
+    },
+    "vnetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Virtual Network name"
+      },
+      "defaultValue": "Pmcglobal-Vnet"
+    },
+    "dnsDomainName": {
+      "type": "string",
+      "defaultValue": "pmcglobal.me",
+      "metadata": {
+        "description": "DNS domain name use to build the host's FQDN."
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of admin account of the VMs, this name cannot be well know names, like root, admin, administrator, guest, etc."
+      },
+      "defaultValue": "pmcglobaladmin"
+    },
+    "adminPassword":{
+      "type": "securestring",
+      "metadata": {
+        "description": "Admin password"
+      }
+    }
+  },
+  "variables": {
+    "libraryBaseUrl": "[parameters('_artifactsLocation')]",
+    "deploymentConfig": {
+      "libraryBaseUrl": "[variables('libraryBaseUrl')]",
+      "sasToken": "[parameters('_artifactsLocationSasToken')]",
+      "deploymentUniqueString": "[uniqueString(concat(deployment().name,resourceGroup().id))]",
+      "apiVersions": {
+        "nicApiVersion": "2017-06-01",
+        "deploymentApiVersion": "2017-05-10",
+        "vmApiVersion": "2017-03-30",
+        "publicIpApiVersion": "2017-11-01",
+        "vnetApiVersion": "2016-03-30",
+        "nsgApiVersion": "2017-06-01",
+        "vmExtensionApiVersion": "2015-06-15",
+        "subnetApiVersion": "2017-10-01",
+        "applicationGwApiVersion": "2017-10-01",
+        "availabilitySetApiVersion": "2017-03-30"
+      }
+    },
+    "deploymentUniqueString": "[if(equals(parameters('deploymentUniqueString'),'none'),variables('deploymentConfig').deploymentUniqueString,parameters('deploymentUniqueString'))]",
+    "vnetAdressSpace": "10.0.0.0/16",
+    "subnet01Name": "subnet01",
+    "subnet01AdressPrefix": "10.0.0.0/24",
+    "subnet02Name": "subnet02",
+    "subnet02AdressPrefix": "10.0.1.0/24",
+    "tags": {
+      "Service": "Basic Infrasctructure"
+    },
+    "tags01": {
+      "Service": "infraSupport"
+    },
+    "faultDomains": 2,
+    "updateDomains": 5,
+    "managedDisksAligned": "yes",
+    "avSetInfo": [
+      {
+        "availabilitySetName": "ns-AvSet",
+        "managedDisksAligned": "yes"
+      }
+    ],
+    "vnetId": "[resourceId('Microsoft.Network/virtualNetworks',parameters('vnetName'))]",
+    "dnsVMsList": [
+      {
+        "name": "ns01",
+        "storageAccountType": "Standard_LRS",
+        "subnetId": "[concat(variables('vnetId'),'/subnets/subnet02')]",
+        "vmSize": "Standard_DS1_v2",
+        "privateIpAddress": "10.0.1.4",
+        "availabilitySetId": "[resourceId('Microsoft.Compute/availabilitySets','ns-AvSet')]",
+        "imageInfo": {
+          "publisher": "OpenLogic",
+          "offer": "CentOS",
+          "sku": "6.9",
+          "version": "latest"
+        }
+      },
+      {
+        "name": "ns02",
+        "storageAccountType": "Standard_LRS",
+        "subnetId": "[concat(variables('vnetId'),'/subnets/subnet02')]",
+        "vmSize": "Standard_DS2_v2",
+        "privateIpAddress": "10.0.1.5",
+        "availabilitySetId": "[resourceId('Microsoft.Compute/availabilitySets','ns-AvSet')]",
+        "imageInfo": {
+          "publisher": "OpenLogic",
+          "offer": "CentOS",
+          "sku": "6.9",
+          "version": "latest"
+        }
+      }
+    ],
+    "pipName": "jumpboxPip",
+    "jumpBoxInfo": {
+      "name": "jumpbox01",
+      "storageAccountType": "Standard_LRS",
+      "subnetId": "[concat(variables('vnetId'),'/subnets/subnet01')]",
+      "publicIpId": "[resourceId('Microsoft.Network/publicIPAddresses',variables('pipName'))]",
+      "vmSize": "Standard_DS1_v2",
+      "privateIpAddress": "10.0.0.4",
+      "imageInfo": {
+        "publisher": "OpenLogic",
+        "offer": "CentOS",
+        "sku": "6.9",
+        "version": "latest"
+      }
+    },
+    "dnsIpAddresses": [
+      "10.0.1.4",
+      "10.0.1.5"
+    ]
+  },
+  "resources": [
+    {
+      "comments": "Availability Sets",
+      "type": "Microsoft.Compute/availabilitySets",
+      "name": "[variables('avSetInfo')[copyIndex()].availabilitySetName]",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.availabilitySetApiVersion]",
+      "location": "[parameters('location')]",
+      "tags": "[if(equals(variables('tags'),json('null')),json('null'),variables('tags'))]",
+      "copy": {
+        "name": "avSetCopy",
+        "count": "[length(variables('avSetInfo'))]"
+      },
+      "properties": {
+        "platformFaultDomainCount": "[variables('faultDomains')]",
+        "platformUpdateDomainCount": "[variables('updateDomains')]"
+      },
+      "sku": {
+        "name": "[if(equals(variables('managedDisksAligned'),'yes'),'Aligned','Classic')]"
+      }
+    },
+    {
+      "condition": true,
+      "comments": "Network Security Group",
+      "name": "nsg",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.nsgApiVersion]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "Allow22",
+            "properties": {
+              "description": "Allows 22",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "direction": "Inbound",
+              "access": "Allow",
+              "priority": 100,
+              "protocol": "Tcp",
+              "destinationPortRange": "22",
+              "destinationAddressPrefix": "*"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "comments": "Virtual Network",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.vnetApiVersion]",
+      "type": "Microsoft.Network/virtualNetworks",
+      "name": "[parameters('vnetName')]",
+      "location": "[parameters('location')]",
+      "tags": "[if(equals(variables('tags'),json('null')),json('null'),variables('tags'))]",
+      "dependsOn": [
+        "nsg"
+      ],
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[variables('vnetAdressSpace')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('subnet01Name')]",
+            "properties": {
+              "addressPrefix": "[variables('subnet01AdressPrefix')]",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups','nsg')]"
+              }
+            }
+          },
+          {
+            "name": "[variables('subnet02Name')]",
+            "properties": {
+              "addressPrefix": "[variables('subnet02AdressPrefix')]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": true,
+      "comments": "Public Ip Address",
+      "name": "[variables('pipName')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.publicIpApiVersion]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic"
+      }
+    },
+    {
+      "condition": true,
+      "comments": "Jumpbox Network Interface",
+      "name": "[concat(variables('jumpBoxInfo').name,'-NIC')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.nicApiVersion]",
+      "dependsOn": [
+        "[parameters('vnetName')]",
+        "[variables('pipName')]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "publicIPAddress": {
+                "id": "[variables('jumpBoxInfo').publicIpId]"
+              },
+              "subnet": {
+                "id": "[variables('jumpBoxInfo').subnetId]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "condition": true,
+      "name": "[variables('jumpBoxInfo').name]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.vmApiVersion]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[concat(variables('jumpBoxInfo').name,'-NIC')]"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('jumpBoxInfo').vmSize]"
+        },
+        "osProfile": {
+          "computerName": "[concat(variables('jumpBoxInfo').name,'.',parameters('dnsDomainName'))]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference":  "[variables('jumpBoxInfo').imageInfo]",
+          "osDisk": {
+            "name": "[concat(variables('jumpBoxInfo').name,'-osdisk')]",
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "[variables('jumpBoxInfo').storageAccountType]"
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces',concat(variables('jumpBoxInfo').name,'-NIC'))]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "comments": "DNS Servers Network Interfaces",
+      "name": "[concat(variables('dnsVMsList')[copyIndex()].name,'-NIC')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[parameters('location')]",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.nicApiVersion]",
+      "dependsOn": [
+        "[parameters('vnetName')]"
+      ],
+      "tags": "[if(equals(variables('tags01'),json('null')),json('null'),variables('tags01'))]",
+      "copy": {
+        "name": "nicDnsCopy",
+        "count": "[length(variables('dnsVMsList'))]"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Static",
+              "privateIPAddress": "[variables('dnsVMsList')[copyIndex()].privateIPAddress]",
+              "subnet": {
+                "id": "[variables('dnsVMsList')[copyIndex()].subnetId]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "comments": "Deploying DNS virtual machines",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.vmApiVersion]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "[variables('dnsVmsList')[copyIndex()].name]",
+      "location": "[parameters('location')]",
+      "tags": "[if(equals(variables('tags01'),json('null')),json('null'),variables('tags01'))]",
+      "dependsOn": [
+        "nicDnsCopy",
+        "avSetCopy"
+      ],
+      "copy": {
+        "name": "dnsVmsCopy",
+        "count": "[length(variables('dnsVmsList'))]"
+      },
+      "properties": {
+        "availabilitySet": {
+          "id": "[variables('dnsVmsList')[copyIndex()].availabilitySetId]"
+        },
+        "hardwareProfile": {
+          "vmSize": "[variables('dnsVmsList')[copyIndex()].vmSize]"
+        },
+        "osProfile": {
+          "computerName": "[concat(variables('dnsVmsList')[copyIndex()].name,'.',parameters('dnsDomainName'))]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": "[variables('dnsVmsList')[copyIndex()].imageInfo]",
+          "osDisk": {
+            "name": "[concat(variables('dnsVmsList')[copyIndex()].name,'-osdisk')]",
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "[variables('dnsVmsList')[copyIndex()].storageAccountType]"
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces',concat(variables('dnsVmsList')[copyIndex()].name,'-NIC'))]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "condition": true,
+      "comments": "Installs Bind on ns01 - Master",
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(variables('dnsVMsList')[0].name,'/linuxConfiguration')]",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.vmExtensionApiVersion]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[variables('dnsVMsList')[0].name]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Extensions",
+        "type": "CustomScript",
+        "typeHandlerVersion": "2.0",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "fileUris": [
+            "[concat(parameters('_artifactsLocation'),'/ipaddresses.txt', parameters('_artifactsLocationSasToken'))]",
+            "[concat(parameters('_artifactsLocation'),'/dns_installer_primary.sh', parameters('_artifactsLocationSasToken'))]"
+          ],
+          "commandToExecute": "sh dns_installer_primary.sh"
+        }
+      }
+    },
+    {
+      "condition": true,
+      "comments": "Installs Bind on ns02 - Secondary",
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(variables('dnsVMsList')[1].name,'/linuxConfiguration')]",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.vmExtensionApiVersion]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', variables('dnsVMsList')[0].name,'/extensions/linuxConfiguration')]",
+        "[variables('dnsVMsList')[1].name]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Extensions",
+        "type": "CustomScript",
+        "typeHandlerVersion": "2.0",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "fileUris": [
+            "[concat(parameters('_artifactsLocation'),'/dns_installer_secondary.sh', parameters('_artifactsLocationSasToken'))]",
+            "[concat(parameters('_artifactsLocation'),'/ipaddresses.txt', parameters('_artifactsLocationSasToken'))]"
+          ],
+          "commandToExecute": "sh dns_installer_secondary.sh"
+        }
+      }
+    },
+    {
+      "condition": true,
+      "comments": "Updates VNET DNS Settings",
+      "name": "[concat(variables('deploymentUniqueString'),'-VnetDnsUpdate')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.deploymentApiVersion]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', variables('dnsVMsList')[0].name,'/extensions/linuxConfiguration')]",
+        "[concat('Microsoft.Compute/virtualMachines/', variables('dnsVMsList')[1].name,'/extensions/linuxConfiguration')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "resources": [
+            {
+              "apiVersion": "[variables('deploymentConfig').apiVersions.vnetApiVersion]",
+              "type": "Microsoft.Network/virtualNetworks",
+              "name": "[parameters('vnetName')]",
+              "location": "[parameters('location')]",
+              "tags": "[if(equals(variables('tags'),json('null')),json('null'),variables('tags'))]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "[variables('vnetAdressSpace')]"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "[variables('subnet01Name')]",
+                    "properties": {
+                      "addressPrefix": "[variables('subnet01AdressPrefix')]"
+                    }
+                  },
+                  {
+                    "name": "[variables('subnet02Name')]",
+                    "properties": {
+                      "addressPrefix": "[variables('subnet02AdressPrefix')]"
+                    }
+                  }
+                ],
+                "dhcpOptions": {
+                  "dnsServers": "[variables('dnsIpAddresses')]"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "condition": true,
+      "comments": "Update VMs DNS Settings",
+      "name": "[concat(variables('deploymentUniqueString'),'-UpdateDnsVmsDnsSettings-',copyIndex())]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "[variables('deploymentConfig').apiVersions.deploymentApiVersion]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', variables('dnsVMsList')[0].name,'/extensions/linuxConfiguration')]",
+        "[concat('Microsoft.Compute/virtualMachines/', variables('dnsVMsList')[1].name,'/extensions/linuxConfiguration')]"
+      ],
+      "copy": {
+        "name": "dnsVmsDnsUpdateCopy",
+        "count": "[length(variables('dnsVmsList'))]",
+        "mode": "Serial"
+      },
+      "properties": {
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "resources": [
+            {
+              "name": "[concat(variables('dnsVMsList')[copyIndex()].name,'-NIC')]",
+              "type": "Microsoft.Network/networkInterfaces",
+              "location": "[parameters('location')]",
+              "apiVersion": "[variables('deploymentConfig').apiVersions.nicApiVersion]",
+              "tags": "[if(equals(variables('tags01'),json('null')),json('null'),variables('tags01'))]",
+              "properties": {
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig1",
+                    "properties": {
+                      "privateIPAllocationMethod": "Static",
+                      "privateIPAddress": "[variables('dnsVMsList')[copyIndex()].privateIPAddress]",
+                      "subnet": {
+                        "id": "[variables('dnsVMsList')[copyIndex()].subnetId]"
+                      }
+                    }
+                  }
+                ],
+                "dnsSettings": {
+                  "dnsServers": "[variables('dnsIpAddresses')]"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {}
+}

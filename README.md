@@ -1,2 +1,2 @@
 # bindsetup
-Test repo for bind setup scripts
+Test repo that reproduces the no-reboot effect on Linux VMs when DNS is configured at NIC level via template.
